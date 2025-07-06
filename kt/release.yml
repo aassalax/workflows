@@ -87,14 +87,14 @@ jobs:
           docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:latest"
 
-      - name: Cleanup dev-* tags from GHCR
+      - name: Cleanup main-* tags from GHCR
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ github.repository }}
         run: |
           echo "::add-mask::$GH_TOKEN"
-          echo "🔍 Looking for dev-* tags in ghcr.io/$IMAGE"
+          echo "🔍 Looking for main-* tags in ghcr.io/$IMAGE"
 
           sudo apt-get update -qq && sudo apt-get install -y -qq gh jq
 
@@ -103,10 +103,10 @@ jobs:
           gh api -H "Accept: application/vnd.github+json" \
             "/orgs/${IMAGE%%/*}/packages/container/${IMAGE#*/}/versions" > versions.json
 
-          TAGS=$(jq -r '.[] | select(.metadata.container.tags[] | startswith("dev-")) | [.id, .metadata.container.tags[]] | @tsv' versions.json)
+          TAGS=$(jq -r '.[] | select(.metadata.container.tags[] | startswith("main-")) | [.id, .metadata.container.tags[]] | @tsv' versions.json)
 
           if [ -z "$TAGS" ]; then
-            echo "✅ Aucun tag dev-* trouvé."
+            echo "✅ Aucun tag main-* trouvé."
             exit 0
           fi
 

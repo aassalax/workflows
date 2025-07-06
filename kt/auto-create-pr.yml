@@ -1,4 +1,4 @@
-name: Auto-create PR on push (except main)
+name: Auto-create PR on push
 
 on:
   workflow_call:
