@@ -95,7 +95,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_FILE: publish-release.yml  # Adapte si besoin au nom exact du fichier
+          WORKFLOW_FILE: release-kt.yml
           TAG_NAME: ${{ steps.version.outputs.new_tag }}
         run: |
           echo "Déclenchement manuel du workflow Publish Release pour le tag $TAG_NAME"
