@@ -1,7 +1,11 @@
 name: Publish Release
 
 on:
-  workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release'
+        required: true
 
 permissions:
   contents: write
@@ -10,6 +14,8 @@ permissions:
 jobs:
   publish_release:
     runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag_name }}
 
     steps:
       - name: Checkout code
@@ -21,7 +27,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const tag = context.ref.replace('refs/tags/', '');
+            const tag = process.env.TAG_NAME;
             const { data: releases } = await github.rest.repos.listReleases({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -39,8 +45,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "🚀 ${{ github.ref_name }}"
+          tag_name: ${{ env.TAG_NAME }}
+          name: "🚀 ${{ env.TAG_NAME }}"
           body: ${{ steps.draft_release.outputs.release_body }}
           draft: false
           prerelease: false
@@ -78,7 +84,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ env.TAG_NAME }}"
           IMAGE="ghcr.io/${{ github.repository }}"
 
           echo "🔧 Building Docker image: $IMAGE:$VERSION"
