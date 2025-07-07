@@ -4,7 +4,7 @@ on:
   workflow_call:
     secrets:
       PAT_TOKEN:
-        required: true
+        required: false
 
 permissions:
   contents: write
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important pour récupérer les tags existants
+          fetch-depth: 0  # Important pour récupérer tous les tags
 
       - name: Configure Git identity
         run: |
@@ -28,21 +28,24 @@ jobs:
       - name: Compute next version from PR labels
         id: version
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           # Obtenir le dernier tag, ou v0.0.0 si aucun
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Dernier tag: $LAST_TAG"
 
-          # Extraire la date de ce tag pour cibler les PRs récentes
+          # Extraire la date du dernier tag
           TAG_DATE=$(git log -1 --format=%cI "$LAST_TAG")
 
-          # Nettoyer le "v" et séparer version
+          # Nettoyer le "v" et séparer la version
           VERSION=${LAST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          # Lister les labels des PRs mergées depuis le dernier tag
-          LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name')
+          # Authentification avec GH CLI
+          echo "$GH_TOKEN" | gh auth login --with-token
+
+          # Lister les labels des PRs mergées depuis la date du dernier tag
+          LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name' || echo "")
 
           echo "Labels détectés: $LABELS"
 
@@ -55,7 +58,7 @@ jobs:
 
           echo "Incrément: $BUMP"
 
-          # Appliquer l'incrément de version
+          # Calcul de la nouvelle version
           if [[ "$BUMP" == "major" ]]; then
             ((MAJOR+=1)); MINOR=0; PATCH=0
           elif [[ "$BUMP" == "minor" ]]; then
