@@ -53,6 +53,9 @@ jobs:
           VERSION=${LAST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
+          # Authentification avec gh CLI
+          echo "$GH_TOKEN" | gh auth login --with-token
+
           # Lister les labels des PRs mergées depuis la date du dernier tag
           LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name' || echo "")
 
@@ -86,3 +89,18 @@ jobs:
         run: |
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
+
+      - name: Trigger Publish Release workflow dispatch
+        if: ${{ steps.version.outputs.new_tag != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_FILE: release-kt.yml
+          TAG_NAME: ${{ steps.version.outputs.new_tag }}
+        run: |
+          echo "Déclenchement manuel du workflow Publish Release pour le tag $TAG_NAME"
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/repos/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches \
+            -d "{\"ref\":\"refs/tags/$TAG_NAME\"}"
