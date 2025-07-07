@@ -2,24 +2,81 @@ name: Publish Release
 
 on:
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Tag to release'
-        required: true
 
 permissions:
   contents: write
   packages: write
+  pull-requests: read
 
 jobs:
-  publish_release:
+  release:
     runs-on: ubuntu-latest
-    env:
-      TAG_NAME: ${{ github.event.inputs.tag_name }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Important pour récupérer tous les tags
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Compute next version from PR labels
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_TAG=$(git tag --list "v*" --sort=-v:refname | head -n1 || echo "v0.0.0")
+
+          if [[ ! "$LAST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            LAST_TAG="v0.0.0"
+          fi
+
+          echo "Dernier tag: $LAST_TAG"
+
+          if git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
+            TAG_DATE=$(git log -1 --format=%cI "$LAST_TAG")
+          else
+            TAG_DATE="1970-01-01T00:00:00Z"
+          fi
+
+          echo "Date du dernier tag: $TAG_DATE"
+
+          LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name' || echo "")
+
+          echo "Labels détectés: $LABELS"
+
+          BUMP="patch"
+          if echo "$LABELS" | grep -q "breaking-change"; then
+            BUMP="major"
+          elif echo "$LABELS" | grep -q "feature"; then
+            BUMP="minor"
+          fi
+
+          echo "Incrément: $BUMP"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
+
+          if [[ "$BUMP" == "major" ]]; then
+            ((MAJOR+=1)); MINOR=0; PATCH=0
+          elif [[ "$BUMP" == "minor" ]]; then
+            ((MINOR+=1)); PATCH=0
+          else
+            ((PATCH+=1))
+          fi
+
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          echo "Nouvelle version: $NEW_VERSION"
+          echo "new_tag=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push new tag
+        env:
+          TAG_NAME: ${{ steps.version.outputs.new_tag }}
+        run: |
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
 
       - name: Get release notes from draft
         id: draft_release
@@ -41,12 +98,14 @@ jobs:
 
             core.setOutput('release_body', draft.body);
             core.setOutput('draft_id', draft.id);
+        env:
+          TAG_NAME: ${{ steps.version.outputs.new_tag }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: "🚀 ${{ env.TAG_NAME }}"
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: "🚀 ${{ steps.version.outputs.new_tag }}"
           body: ${{ steps.draft_release.outputs.release_body }}
           draft: false
           prerelease: false
@@ -84,7 +143,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          VERSION="${{ env.TAG_NAME }}"
+          VERSION="${{ steps.version.outputs.new_tag }}"
           IMAGE="ghcr.io/${{ github.repository }}"
 
           echo "🔧 Building Docker image: $IMAGE:$VERSION"
