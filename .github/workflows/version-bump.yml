@@ -30,8 +30,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Obtenir le dernier tag, ou v0.0.0 si aucun
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          # Récupérer le dernier tag sémantique (vX.Y.Z) ou v0.0.0 si aucun
+          LAST_TAG=$(git tag --list "v*" --sort=-v:refname | head -n1 || echo "v0.0.0")
+
+          # Vérifier que le tag a bien le format vX.Y.Z, sinon fallback
+          if [[ ! "$LAST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            LAST_TAG="v0.0.0"
+          fi
+
           echo "Dernier tag: $LAST_TAG"
 
           # Extraire la date du dernier tag
@@ -40,9 +46,6 @@ jobs:
           # Nettoyer le "v" et séparer la version
           VERSION=${LAST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-
-          # Authentification avec GH CLI
-          echo "$GH_TOKEN" | gh auth login --with-token
 
           # Lister les labels des PRs mergées depuis la date du dernier tag
           LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name' || echo "")
