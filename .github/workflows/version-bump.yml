@@ -12,37 +12,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # important pour voir les anciens tags
+          fetch-depth: 0  # Important pour récupérer les tags existants
 
-      - name: Set up Git
+      - name: Configure Git identity
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Install GitHub CLI
-        uses: cli/cli-action@v2
-
-      - name: Compute next version
+      - name: Compute next version from PR labels
         id: version
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}  # ← ton token PAT orga ici
+          GH_TOKEN: ${{ secrets.GH_PAT }}  # Personal Access Token stocké dans les secrets
         run: |
-          # Get last tag or default to v0.0.0
+          # Obtenir le dernier tag, ou v0.0.0 si aucun
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "🔖 Dernier tag: $LAST_TAG"
+          echo "Dernier tag: $LAST_TAG"
 
-          # Extract version parts
+          # Extraire la date de ce tag pour cibler les PRs récentes
+          TAG_DATE=$(git log -1 --format=%cI "$LAST_TAG")
+
+          # Nettoyer le "v" et séparer version
           VERSION=${LAST_TAG#v}
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          # Get PRs closed since last tag
-          TAG_DATE=$(git log -1 --format=%cI "$LAST_TAG")
-          LABELS=$(gh pr list --search "is:merged merged:>$TAG_DATE" --json labels --jq '.[].labels[].name')
+          # Lister les labels des PRs mergées depuis le dernier tag
+          LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name')
 
-          echo "📦 Labels trouvés: $LABELS"
+          echo "Labels détectés: $LABELS"
 
           BUMP="patch"
           if echo "$LABELS" | grep -q "breaking-change"; then
@@ -51,7 +50,9 @@ jobs:
             BUMP="minor"
           fi
 
-          # Increment version
+          echo "Incrément: $BUMP"
+
+          # Appliquer l'incrément de version
           if [[ "$BUMP" == "major" ]]; then
             ((MAJOR+=1)); MINOR=0; PATCH=0
           elif [[ "$BUMP" == "minor" ]]; then
@@ -61,11 +62,10 @@ jobs:
           fi
 
           NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
-          echo "🆕 Nouvelle version: $NEW_VERSION"
-
+          echo "Nouvelle version: $NEW_VERSION"
           echo "new_tag=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create and push tag
+      - name: Create and push new tag
         env:
           TAG_NAME: ${{ steps.version.outputs.new_tag }}
         run: |
