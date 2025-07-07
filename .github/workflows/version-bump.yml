@@ -1,9 +1,7 @@
 name: Auto Version & Tag
 
 on:
-  push:
-    tags:
-      - stable
+  workflow_call:
 
 permissions:
   contents: write
