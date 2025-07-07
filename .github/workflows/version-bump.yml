@@ -25,22 +25,25 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
+      - name: Authenticate GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | gh auth login --with-token
+
       - name: Compute next version from PR labels
         id: version
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Récupérer le dernier tag sémantique (vX.Y.Z) ou v0.0.0 si aucun
           LAST_TAG=$(git tag --list "v*" --sort=-v:refname | head -n1 || echo "v0.0.0")
 
-          # Vérifier que le tag a bien le format vX.Y.Z, sinon fallback
           if [[ ! "$LAST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             LAST_TAG="v0.0.0"
           fi
 
           echo "Dernier tag: $LAST_TAG"
 
-          # Vérifier que le tag existe réellement, sinon fixer une date ancienne
           if git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
             TAG_DATE=$(git log -1 --format=%cI "$LAST_TAG")
           else
@@ -49,14 +52,6 @@ jobs:
 
           echo "Date du dernier tag: $TAG_DATE"
 
-          # Nettoyer le "v" et séparer la version
-          VERSION=${LAST_TAG#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-
-          # Authentification avec gh CLI
-          echo "$GH_TOKEN" | gh auth login --with-token
-
-          # Lister les labels des PRs mergées depuis la date du dernier tag
           LABELS=$(gh pr list --state merged --search "merged:>$TAG_DATE" --json labels --jq '.[].labels[].name' || echo "")
 
           echo "Labels détectés: $LABELS"
@@ -70,7 +65,8 @@ jobs:
 
           echo "Incrément: $BUMP"
 
-          # Calcul de la nouvelle version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
+
           if [[ "$BUMP" == "major" ]]; then
             ((MAJOR+=1)); MINOR=0; PATCH=0
           elif [[ "$BUMP" == "minor" ]]; then
@@ -89,18 +85,3 @@ jobs:
         run: |
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
-
-      - name: Trigger Publish Release workflow dispatch
-        if: ${{ steps.version.outputs.new_tag != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          WORKFLOW_FILE: release-kt.yml
-          TAG_NAME: ${{ steps.version.outputs.new_tag }}
-        run: |
-          echo "Déclenchement manuel du workflow Publish Release pour le tag $TAG_NAME"
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/$REPO/actions/workflows/$WORKFLOW_FILE/dispatches \
-            -d "{\"ref\":\"refs/tags/$TAG_NAME\"}"
