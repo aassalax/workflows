@@ -2,6 +2,9 @@ name: Auto Version & Tag
 
 on:
   workflow_call:
+    secrets:
+      PAT_TOKEN:
+        required: true
 
 permissions:
   contents: write
@@ -25,7 +28,7 @@ jobs:
       - name: Compute next version from PR labels
         id: version
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}  # Personal Access Token stocké dans les secrets
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           # Obtenir le dernier tag, ou v0.0.0 si aucun
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
